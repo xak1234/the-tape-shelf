@@ -200,7 +200,7 @@
   .scene-wrap{padding:10px 12px 0; z-index:6}
   .scene-frame{position:relative; margin:0 auto; max-width:520px; border:2px solid #2a2416;
     border-radius:6px; overflow:hidden; background:#000; box-shadow:0 0 0 1px #000, 0 6px 18px rgba(0,0,0,.5)}
-  .scene-frame canvas{display:block; width:100%; height:auto; image-rendering:pixelated}
+  .scene-frame canvas{display:block; width:100%; height:auto; image-rendering:auto}
   .scene-frame .cap{font-family:"VT323",monospace; font-size:15px; color:var(--amber-glow);
     padding:3px 8px 4px; background:linear-gradient(180deg,#0b0a07,#000); border-top:1px solid #17140c}
 
@@ -347,7 +347,7 @@
     </div>
     <div class="scene-wrap hidden" id="sceneWrap">
       <div class="scene-frame">
-        <canvas id="sceneCanvas" width="160" height="120"></canvas>
+        <canvas id="sceneCanvas" width="1920" height="1440"></canvas>
         <div class="cap" id="sceneCap"></div>
       </div>
     </div>
@@ -406,7 +406,7 @@
    THE TAPE SHELF — standalone
    - covers: original SVG inlay art (motif library)
    - engine: OpenAI-compatible /v1/chat/completions (LLM7 Codestral by default)
-   - images: engine decides (scene in JSON) -> chunky pixel canvas
+   - images: engine decides (scene in JSON) -> 1920x1440 canvas
    - saves : localStorage per game
    - TTS   : speechSynthesis  |  mic: SpeechRecognition
    - tone  : orange or green text, localStorage tapeshelf:tone
@@ -746,16 +746,17 @@ Respond with ONLY a JSON object, no prose outside it, no code fences:
  "scene": object|null,  // SEE BELOW — include ONLY when warranted, else null
  "state": string        // compact <=500 char running summary: location, visible exits, inventory, key flags, goal progress. I FEED THIS BACK to you next turn — keep it consistent and current.
 }
-scene: include ONLY when the player has just ENTERED a new, visually distinct location OR witnessed a dramatic reveal. Otherwise null (most turns are null). When present it is a tiny chunky-pixel key-art spec of what the player now sees:
+scene: include ONLY when the player has just ENTERED a new, visually distinct location OR witnessed a dramatic reveal. Otherwise null (most turns are null). When present it is a detailed high-resolution illustration of what the player now sees, built from layered shapes. Not pixel art. Not a few flat blocks.
 { "bg":"#rrggbb", "skyTop":"#rrggbb", "skyBottom":"#rrggbb", "horizon":0..1, "ground":"#rrggbb",
-  "elements":[  // <=14 items, drawn in order
-     {"t":"rect","x":0..1,"y":0..1,"w":0..1,"h":0..1,"c":"#rrggbb"},
-     {"t":"circle","x":0..1,"y":0..1,"r":0..1,"c":"#rrggbb"},
-     {"t":"poly","pts":[[x,y],...],"c":"#rrggbb"},
+  "elements":[  // 24 to 40 items, far to near: sky bodies, distant silhouette, structures, ground, foreground, then trim and shadow
+     {"t":"rect","x":0..1,"y":0..1,"w":0..1,"h":0..1,"c":"#rrggbb","a":0..1},
+     {"t":"ellipse","x":0..1,"y":0..1,"rx":0..1,"ry":0..1,"c":"#rrggbb","a":0..1},
+     {"t":"circle","x":0..1,"y":0..1,"r":0..1,"c":"#rrggbb","a":0..1},
+     {"t":"poly","pts":[[x,y],...],"c":"#rrggbb","a":0..1},
      {"t":"line","pts":[[x,y],[x,y]],"c":"#rrggbb","w":1},
      {"t":"star","x":0..1,"y":0..1,"r":0..1,"c":"#rrggbb"} ],
   "mood":"one word" }
-All coords normalized 0..1 (x right, y down), colors #rrggbb. Think bold, simple 8-bit art.
+Coords are normalized 0..1 (x right, y down). Colors are #rrggbb. Omit "a" when opaque. Use several close shades so light, shadow, and depth read. No letters in the picture.
 Keep the world consistent with the state I give you. Reward clever play; be fair but not a pushover.`;
 
 const ENGINE_LS = 'tapeshelf:engine';
@@ -1003,7 +1004,7 @@ async function postChat(cfg, messages){
   const body = {
     model,
     temperature: 0.8,
-    max_tokens: 900,
+    max_tokens: 2200,
     messages: chatMessages(messages)
   };
   const url = cfg.base + '/chat/completions';
@@ -1445,41 +1446,72 @@ function updateHUD(){
   document.getElementById('stInv').textContent=session.inv&&session.inv.length?session.inv.join(', '):'nothing';
 }
 
-/* ---------- imagined-location pixel art ---------- */
-const cv=document.getElementById('sceneCanvas'), cx=cv.getContext('2d');
-const CW=160, CH=120;
+/* ---------- imagined-location art ---------- */
+const cv=document.getElementById('sceneCanvas');
+const CW=1920, CH=1440;
+cv.width=CW; cv.height=CH;
+const cx=cv.getContext('2d', {alpha:false});
 function hideScene(){ document.getElementById('sceneWrap').classList.add('hidden'); }
 function clampU(v){ v=+v; return isFinite(v)?Math.max(0,Math.min(1,v)):0; }
 function col(c){ return (typeof c==='string'&&/^#[0-9a-fA-F]{3,8}$/.test(c))?c:'#888888'; }
 function drawScene(s, caption){
   const wrap=document.getElementById('sceneWrap'); wrap.classList.remove('hidden');
   document.getElementById('sceneCap').textContent=(s.mood?('▍ '+String(s.mood).slice(0,40)):'▍ '+String(caption||'').slice(0,40));
-  cx.imageSmoothingEnabled=false;
-  // background
+  cx.setTransform(1,0,0,1,0,0);
+  cx.globalAlpha=1;
+  cx.imageSmoothingEnabled=true;
   cx.fillStyle=col(s.bg||'#0a0a0c'); cx.fillRect(0,0,CW,CH);
-  const hz=Math.round(clampU(s.horizon!=null?s.horizon:0.62)*CH);
-  // banded sky
+  const hz=clampU(s.horizon!=null?s.horizon:0.62)*CH;
   const top=col(s.skyTop||s.bg||'#12203a'), bot=col(s.skyBottom||s.skyTop||'#0a0a0c');
-  const bands=7, bh=Math.max(1,Math.floor(hz/bands));
-  for(let b=0;b<bands;b++){ cx.fillStyle=mix(top,bot,b/(bands-1)); cx.fillRect(0,b*bh,CW, (b===bands-1?hz-b*bh:bh)); }
-  if(hz<CH){ cx.fillStyle=col(s.ground||'#20180f'); cx.fillRect(0,hz,CW,CH-hz); }
-  // elements
-  const els=Array.isArray(s.elements)?s.elements.slice(0,16):[];
+  if(hz>1){
+    const sky=cx.createLinearGradient(0,0,0,hz);
+    sky.addColorStop(0, top); sky.addColorStop(1, bot);
+    cx.fillStyle=sky; cx.fillRect(0,0,CW,Math.ceil(hz));
+  }
+  if(hz<CH-1){
+    const ground=col(s.ground||'#20180f');
+    const gg=cx.createLinearGradient(0,hz,0,CH);
+    gg.addColorStop(0, mix(bot, ground, 0.45));
+    gg.addColorStop(1, ground);
+    cx.fillStyle=gg; cx.fillRect(0,Math.floor(hz),CW,CH-Math.floor(hz));
+  }
+  const els=Array.isArray(s.elements)?s.elements.slice(0,64):[];
   for(const e of els){ try{ drawEl(e) }catch(_){} }
-  // scanline reveal
+  const vig=cx.createRadialGradient(CW*0.5,CH*0.42,CW*0.18,CW*0.5,CH*0.5,CW*0.75);
+  vig.addColorStop(0,'rgba(0,0,0,0)');
+  vig.addColorStop(1,'rgba(0,0,0,0.34)');
+  cx.globalAlpha=1; cx.fillStyle=vig; cx.fillRect(0,0,CW,CH);
   revealScene();
 }
 function drawEl(e){
   if(!e||typeof e!=='object') return;
+  const a=+e.a;
+  cx.save();
+  cx.globalAlpha=isFinite(a)?clampU(a):1;
   cx.fillStyle=col(e.c); cx.strokeStyle=col(e.c);
-  const X=v=>Math.round(clampU(v)*CW), Y=v=>Math.round(clampU(v)*CH), R=v=>Math.round(clampU(v)*Math.min(CW,CH));
+  cx.lineJoin='round'; cx.lineCap='round';
+  const X=v=>clampU(v)*CW, Y=v=>clampU(v)*CH, R=v=>clampU(v)*Math.min(CW,CH);
   switch(e.t){
-    case 'rect': cx.fillRect(X(e.x),Y(e.y),Math.max(1,Math.round(clampU(e.w)*CW)),Math.max(1,Math.round(clampU(e.h)*CH))); break;
-    case 'circle':{ const r=Math.max(1,R(e.r)); cx.beginPath(); cx.arc(X(e.x),Y(e.y),r,0,7); cx.fill(); break; }
-    case 'star':{ const r=Math.max(1,R(e.r)), px=X(e.x),py=Y(e.y); cx.fillRect(px-r,py,r*2+1,1); cx.fillRect(px,py-r,1,r*2+1); if(r>2){cx.fillRect(px-1,py-1,3,3);} break; }
+    case 'rect': cx.fillRect(X(e.x),Y(e.y),Math.max(1,clampU(e.w)*CW),Math.max(1,clampU(e.h)*CH)); break;
+    case 'circle':{ const r=Math.max(1,R(e.r)); cx.beginPath(); cx.arc(X(e.x),Y(e.y),r,0,Math.PI*2); cx.fill(); break; }
+    case 'ellipse':{
+      const rx=Math.max(1,clampU(e.rx!=null?e.rx:e.r)*CW), ry=Math.max(1,clampU(e.ry!=null?e.ry:e.r)*CH);
+      cx.beginPath(); cx.ellipse(X(e.x),Y(e.y),rx,ry,0,0,Math.PI*2); cx.fill(); break;
+    }
+    case 'star':{
+      const r=Math.max(2,R(e.r)), px=X(e.x), py=Y(e.y);
+      cx.beginPath();
+      for(let i=0;i<10;i++){
+        const rad=i%2?r*0.4:r, ang=-Math.PI/2+i*Math.PI/5;
+        const sx=px+Math.cos(ang)*rad, sy=py+Math.sin(ang)*rad;
+        i?cx.lineTo(sx,sy):cx.moveTo(sx,sy);
+      }
+      cx.closePath(); cx.fill(); break;
+    }
     case 'poly':{ if(Array.isArray(e.pts)&&e.pts.length>1){ cx.beginPath(); e.pts.forEach((pt,i)=>{ const x=X(pt[0]),y=Y(pt[1]); i?cx.lineTo(x,y):cx.moveTo(x,y); }); cx.closePath(); cx.fill(); } break; }
-    case 'line':{ if(Array.isArray(e.pts)&&e.pts.length>1){ cx.lineWidth=Math.max(1,Math.round(e.w||1)); cx.beginPath(); e.pts.forEach((pt,i)=>{ const x=X(pt[0]),y=Y(pt[1]); i?cx.lineTo(x,y):cx.moveTo(x,y); }); cx.stroke(); } break; }
+    case 'line':{ if(Array.isArray(e.pts)&&e.pts.length>1){ cx.lineWidth=Math.max(1.5,(isFinite(+e.w)?+e.w:1)*(CW/160)); cx.beginPath(); e.pts.forEach((pt,i)=>{ const x=X(pt[0]),y=Y(pt[1]); i?cx.lineTo(x,y):cx.moveTo(x,y); }); cx.stroke(); } break; }
   }
+  cx.restore();
 }
 function revealScene(){
   if(reduce) return;

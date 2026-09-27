@@ -40,7 +40,7 @@ Each tape is labelled with the title, year, and publisher of a classic. The cove
 
 - Commands are ordinary language. The prompt is `what do you do?`
 - The bar shows the current place, score, move count, and inventory.
-- A small pixel picture appears when you enter a new place or hit a reveal. Other turns stay as text.
+- A 1920×1440 picture appears when you enter a new place or hit a reveal. Other turns stay as text.
 - Score runs from 0 to 350 and moves when you make real progress.
 - If the opening turn does not arrive, type `LOOK`.
 - **SHELF** leaves the game and keeps the position.
