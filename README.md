@@ -1,5 +1,7 @@
 # The Tape Shelf
 
+![The Tape Shelf, with Lords of Time on the shelf](screenshot.png)
+
 Original AI text adventures in one page. Open [`index.html`](index.html) in a browser. Codestral is already on. Load a tape and type what you do.
 
 Each tape is labelled with the title, year, and publisher of a classic. The cover, the brief, and the game you play are original. The engine is told to invent its own rooms, puzzles, and prose but this is almost identical to the original...
